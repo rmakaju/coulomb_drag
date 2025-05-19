@@ -58,3 +58,6 @@ venv.bak/
 
 # Local environment files
 .env
+
+# macOS
+.DS_Store

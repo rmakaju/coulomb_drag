@@ -1,0 +1,27 @@
+[project]
+name = "analysis"
+version = "0.1.0"
+description = "Analysis tools for Coulomb drag experiments"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=2.2.6",
+  "pandas>=2.2.3",
+  "scipy>=1.15.3",
+]
+
+[dependency-groups]
+dev = [
+  "black>=25.1.0",
+  "flake8>=7.2.0",
+  "ipython>=9.2.0",
+  "pytest>=8.3.5",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+
+[tool.flake8]
+max-line-length = 88
+extend-ignore = ['E203', 'W503']

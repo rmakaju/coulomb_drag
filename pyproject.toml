@@ -5,7 +5,9 @@ description = "Analysis tools for Coulomb drag experiments"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "matplotlib>=3.10.3",
   "numpy>=2.2.6",
+  "openpyxl>=3.1.5",
   "pandas>=2.2.3",
   "scipy>=1.15.3",
 ]
@@ -14,6 +16,7 @@ dependencies = [
 dev = [
   "black>=25.1.0",
   "flake8>=7.2.0",
+  "ipykernel>=6.29.5",
   "ipython>=9.2.0",
   "pytest>=8.3.5",
 ]

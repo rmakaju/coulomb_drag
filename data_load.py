@@ -5,7 +5,7 @@ import numpy as np
 COLUMN_ALIASES: Dict[str, list] = {
     'x': ['gate 1 V meas'],
     'y': ['gate 3 V meas'],
-    'z': ['sr860 x raw'],
+    'z': ['sr860 x raw', 'Lockin 1 X raw', 'DMM1 x raw'],
     'z_current': ['sr830 y raw'],
     'x_order': ['x (Left Gate Scan)'],
     'y_order': ['y (Right Gate scan)'],

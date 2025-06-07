@@ -3,13 +3,13 @@ from typing import Tuple, Dict, Iterable
 import numpy as np
 
 COLUMN_ALIASES: Dict[str, list] = {
-    'x': ['gate 1 V meas'],
-    'y': ['gate 3 V meas'],
-    'z': ['sr860 x raw', 'Lockin 1 X raw', 'DMM1 x raw'],
+    'x': ['Gate 1 V meas', 'gate 1 V meas'],
+    'y': ['Gate 3 V meas', 'gate 3 V meas'],
+    'z': ['Lockin 1 X raw', 'sr860 x raw', 'DMM1 x raw'],
     'z_current': ['sr830 y raw'],
-    'x_order': ['x (Left Gate Scan)'],
-    'y_order': ['y (Right Gate scan)'],
-    'current': ['sr830 y raw'],
+    'x_order': ['x_parameter (gate_1)', 'x (Left Gate Scan)', 'x_parameter'],
+    'y_order': ['y_parameter (gate_2)', 'y (Right Gate scan)', 'y_parameter'],
+    'current': ['sr830 y raw', 'Lockin 1 Y raw'],
 }
 
 def load_2d_data(filename: str, use_current: bool = False) -> Data2D:

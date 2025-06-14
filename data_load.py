@@ -7,8 +7,8 @@ COLUMN_ALIASES: Dict[str, list] = {
     'y': ['Gate 3 V meas', 'gate 3 V meas'],
     'z': ['Lockin 1 X raw', 'sr860 x raw', 'DMM1 x raw'],
     'z_current': ['sr830 y raw'],
-    'x_order': ['x_parameter (gate_1)', 'x (Left Gate Scan)', 'x_parameter'],
-    'y_order': ['y_parameter (gate_2)', 'y (Right Gate scan)', 'y_parameter'],
+    'x_order': ['x_parameter (gate_1)', 'x (Left Gate Scan)', 'x (Right Gate Scan)', 'x_parameter'],
+    'y_order': ['y_parameter (gate_2)', 'y (Left Gate Scan)', 'y (Right Gate scan)', 'y_parameter'],
     'current': ['sr830 y raw', 'Lockin 1 Y raw'],
 }
 

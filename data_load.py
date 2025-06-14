@@ -12,6 +12,33 @@ COLUMN_ALIASES: Dict[str, list] = {
     'current': ['sr830 y raw', 'Lockin 1 Y raw'],
 }
 
+def _get_gate_coordinates(file_data: Data2D) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Automatically detect the correct orientation for gate coordinates.
+    
+    Args:
+        file_data: Data2D instance containing 2D arrays.
+        
+    Returns:
+        Tuple[gate1_values, gate3_values]: 1D arrays of unique gate values.
+    """
+    # Try row-wise extraction first (standard case)
+    gate1_row = file_data.x[0, :]
+    gate3_row = file_data.y[:, 0]
+    
+    # Try column-wise extraction
+    gate1_col = file_data.x[:, 0] 
+    gate3_col = file_data.y[0, :]
+    
+    # Check which orientation has more unique values (indicates proper scanning direction)
+    row_unique_ratio = (len(np.unique(gate1_row)) + len(np.unique(gate3_row))) / (len(gate1_row) + len(gate3_row))
+    col_unique_ratio = (len(np.unique(gate1_col)) + len(np.unique(gate3_col))) / (len(gate1_col) + len(gate3_col))
+    
+    if row_unique_ratio >= col_unique_ratio:
+        return gate1_row, gate3_row
+    else:
+        return gate1_col, gate3_col
+
 def load_2d_data(filename: str, use_current: bool = False) -> Data2D:
     """
 
@@ -68,10 +95,17 @@ def get_gate1_lock1(file_data: Data2D, fixed_gate3: float) -> Tuple[np.ndarray, 
     Returns:
         Tuple[gate1_values, lockin_values] arrays along gate1.
     """
-    gate1 = file_data.x[0, :]
-    gate3 = file_data.y[:, 0]
+    gate1, gate3 = _get_gate_coordinates(file_data)
     idx = np.argmin(np.abs(gate3 - fixed_gate3))
-    lock1 = file_data.z[idx, :]
+    
+    # Determine if we need to slice along rows or columns based on coordinate orientation
+    if np.array_equal(gate1, file_data.x[0, :]):
+        # Standard orientation: gate1 along columns, gate3 along rows
+        lock1 = file_data.z[idx, :]
+    else:
+        # Alternative orientation: gate1 along rows, gate3 along columns
+        lock1 = file_data.z[:, idx]
+    
     return gate1, lock1
  
 def get_gate3_lock1(file_data: Data2D, fixed_gate1: float) -> Tuple[np.ndarray, np.ndarray]:
@@ -85,10 +119,17 @@ def get_gate3_lock1(file_data: Data2D, fixed_gate1: float) -> Tuple[np.ndarray, 
     Returns:
         Tuple[gate3_values, lockin_values] arrays along gate3.
     """
-    gate1 = file_data.x[0, :]
-    gate3 = file_data.y[:, 0]
+    gate1, gate3 = _get_gate_coordinates(file_data)
     idx = np.argmin(np.abs(gate1 - fixed_gate1))
-    lock1 = file_data.z[:, idx]
+    
+    # Determine if we need to slice along rows or columns based on coordinate orientation
+    if np.array_equal(gate1, file_data.x[0, :]):
+        # Standard orientation: gate1 along columns, gate3 along rows
+        lock1 = file_data.z[:, idx]
+    else:
+        # Alternative orientation: gate1 along rows, gate3 along columns
+        lock1 = file_data.z[idx, :]
+    
     return gate3, lock1
  
 def get_lock1(file_data: Data2D, fixed_gate1: float, fixed_gate3: float) -> float:
@@ -103,11 +144,17 @@ def get_lock1(file_data: Data2D, fixed_gate1: float, fixed_gate3: float) -> floa
     Returns:
         float: Lockin reading at the nearest grid point.
     """
-    gate1 = file_data.x[0, :]
-    gate3 = file_data.y[:, 0]
+    gate1, gate3 = _get_gate_coordinates(file_data)
     i3 = np.argmin(np.abs(gate3 - fixed_gate3))
     i1 = np.argmin(np.abs(gate1 - fixed_gate1))
-    return float(file_data.z[i3, i1])
+    
+    # Determine indexing based on coordinate orientation
+    if np.array_equal(gate1, file_data.x[0, :]):
+        # Standard orientation: gate1 along columns, gate3 along rows
+        return float(file_data.z[i3, i1])
+    else:
+        # Alternative orientation: gate1 along rows, gate3 along columns
+        return float(file_data.z[i1, i3])
  
 def many_lock1_values(
     file_data: Data2D,

@@ -5,6 +5,10 @@ This repository contains Python tools and Jupyter notebooks for analyzing Coulom
 ## Features
 - Load and pivot raw `.dat` files via `data.py`
 - Comprehensive 1D/2D peak detection in consolidated `peaks.py` module
+- **Modular peak analysis suite**:
+  - `peak_detection.py` - Core peak detection and statistical analysis
+  - `peak_visualization.py` - Plotting and visualization functions
+  - `peak_tracking.py` - Advanced peak tracking and evolution analysis
 - Advanced peak analysis utilities in `peak_utils.py` 
 - Symmetric/anti-symmetric component analysis in `symmetries.py`
 - Utilities for filtering, interpolation, gradient, and more in `data.py`
@@ -45,49 +49,30 @@ uv run python test_peaks_consolidation.py
 uv run python benchmark_peaks.py
 ```
 
-## Module Consolidation
+### Quick Start Example
+```python
+# Example using the new modular peak analysis structure
+from peak_detection import find_peaks_in_data, analyze_peak_statistics
+from peak_visualization import plot_data_with_peaks, plot_peaks_vs_current
+from peak_tracking import plot_peak_tracking_across_current
 
-This codebase has undergone a comprehensive consolidation to improve organization and maintainability:
+# Load your data
+data = {...}  # Your measurement data
 
-### Peak Detection Modules
-- **Before**: Separate `peaks.py` and `peaks_2d.py` modules with overlapping functionality
-- **After**: Unified `peaks.py` module containing all peak detection capabilities
-- **Benefits**: 
-  - Eliminated code duplication
-  - Improved documentation and type hints
-  - Maintained 100% backward compatibility
-  - Added comprehensive test suite
+# Detect peaks
+peaks = find_peaks_in_data(data, 'symmetric_smoothed')
 
-### Key Improvements
-- **Consolidated Interface**: All peak detection functions available from single import
-- **Enhanced Documentation**: Comprehensive docstrings with usage examples
-- **Type Safety**: Full type annotations throughout
-- **Performance**: Benchmarked and optimized functions
-- **Testing**: 5/5 test cases passing with comprehensive coverage
-- **Utilities**: Additional analysis tools in `peak_utils.py`
+# Analyze statistics
+stats = analyze_peak_statistics(peaks)
 
-For detailed information about the consolidation process, see `PEAK_CONSOLIDATION_SUMMARY.md`.
-
-## Project Structure
+# Visualize results
+plot_data_with_peaks(data, peaks)
+plot_peak_tracking_across_current(peaks, data)
 ```
-analysis/
-├── data.py                          # core data loader and transformations
-├── data_load.py                     # 2D data loading utilities
-├── peaks.py                         # consolidated peak detection module
-├── peak_utils.py                    # additional peak analysis utilities
-├── symmetries.py                    # symmetric/anti-symmetric analysis
-├── main.py                          # example CLI entrypoint
-├── test_peaks_consolidation.py      # comprehensive test suite
-├── benchmark_peaks.py               # performance benchmarks
-├── cleanup_workspace.py             # post-consolidation cleanup script
-├── *.ipynb                          # example notebooks
-├── PEAK_CONSOLIDATION_SUMMARY.md    # consolidation documentation
-├── pyproject.toml                   # project metadata & dependencies
-├── README.md                        # project documentation
-├── .gitignore                       # ignored files
-├── .python-version                  # pinned Python version
-└── uv.lock                          # locked dependencies
-```
+
+
+
+
 
 ## Contributing
 Please open issues or pull requests for any bugs or feature requests. Contributions are welcome!

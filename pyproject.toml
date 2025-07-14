@@ -1,5 +1,9 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "analysis"
+name = "coulomb-drag-analysis"
 version = "0.1.0"
 description = "Analysis tools for Coulomb drag experiments"
 readme = "README.md"
@@ -11,6 +15,9 @@ dependencies = [
   "pandas>=2.2.3",
   "scipy>=1.15.3",
 ]
+
+[project.scripts]
+coulomb-drag-analysis = "src.main:main"
 
 [dependency-groups]
 dev = [

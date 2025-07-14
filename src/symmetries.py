@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import colors
 from typing import Tuple, Optional
-from data import DatFile, Data2D
+from src.data import DatFile, Data2D
 
 # Set default font size for plots
 plt.rcParams.update({'font.size': 18})

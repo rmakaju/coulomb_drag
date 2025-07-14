@@ -1,4 +1,4 @@
-from data import DatFile, Data2D
+from src.data import DatFile, Data2D
 from typing import Tuple, Dict, Iterable
 import numpy as np
 

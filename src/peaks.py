@@ -18,7 +18,7 @@ import logging
 import numpy as np
 import os
 from typing import Tuple, Sequence, Callable, Any, Optional, List, Union, Dict
-from data_load import load_2d_data, get_gate3_lock1, get_gate1_lock1
+from src.data_load import load_2d_data, get_gate3_lock1, get_gate1_lock1
 from scipy.signal import find_peaks
 from scipy.ndimage import gaussian_filter
 

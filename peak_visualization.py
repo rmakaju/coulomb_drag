@@ -342,15 +342,43 @@ def plot_peaks_vs_current(peaks_data, all_runs_data, figsize=(14, 10)):
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=figsize)
     
     # Plot 1: Peak positions vs current
-    colors = plt.cm.tab10(np.linspace(0, 1, len(peaks_data)))
+    # Use a better color scheme that provides distinct colors (not gradients)
+    num_currents = len(peaks_data)
+    
+    # Create distinct colors by cycling through multiple colormaps
+    if num_currents <= 10:
+        # Use tab10 for small number of currents
+        colors = plt.cm.tab10(np.linspace(0, 1, 10))[:num_currents]
+    elif num_currents <= 20:
+        # Combine tab10 and tab20 for up to 20 distinct colors
+        colors1 = plt.cm.tab10(np.linspace(0, 1, 10))
+        colors2 = plt.cm.tab20(np.linspace(0, 1, 20))[10:]  # Take the second half of tab20
+        colors = np.vstack([colors1, colors2[:num_currents-10]])
+    else:
+        # For more than 20, cycle through tab10, tab20, and Set3
+        colors1 = plt.cm.tab10(np.linspace(0, 1, 10))
+        colors2 = plt.cm.tab20(np.linspace(0, 1, 20))[10:]  # Second half of tab20
+        colors3 = plt.cm.Set3(np.linspace(0, 1, 12))
+        
+        # Cycle through the combined color sets
+        all_colors = np.vstack([colors1, colors2, colors3])
+        colors = []
+        for i in range(num_currents):
+            colors.append(all_colors[i % len(all_colors)])
+        colors = np.array(colors)
+    
+    # Create a list to track which colors are used for legend
+    legend_handles = []
     
     for i, peak_info in peaks_data.items():
         if len(peak_info['peak_gate_positions']) > 0:
             # Plot each peak position for this current
-            ax1.scatter([peak_info['current']] * len(peak_info['peak_gate_positions']),
-                       peak_info['peak_gate_positions'],
-                       c=[colors[i]], s=60, alpha=0.8, 
-                       label=f"$I_{{drive}} = {peak_info['current']}nA$")
+            scatter = ax1.scatter([peak_info['current']] * len(peak_info['peak_gate_positions']),
+                                 peak_info['peak_gate_positions'],
+                                 color=colors[i], s=80, alpha=0.9, 
+                                 edgecolors='black', linewidth=0.5,
+                                 label=f"$I_{{drive}} = {peak_info['current']}nA$")
+            legend_handles.append(scatter)
     
     ax1.set_xlabel('Current (nA)', fontsize=12)
     ax1.set_ylabel('Peak Gate Position (V)', fontsize=12)
@@ -368,10 +396,11 @@ def plot_peaks_vs_current(peaks_data, all_runs_data, figsize=(14, 10)):
             # Get lockin values at peak indices
             peak_lockin_values = lockin_values[peak_info['peak_indices']]
             
-            # Plot each peak lockin value for this current
+            # Plot each peak lockin value for this current with the same color scheme
             ax2.scatter([peak_info['current']] * len(peak_lockin_values),
                        peak_lockin_values,
-                       c=[colors[i]], s=60, alpha=0.8)
+                       color=colors[i], s=80, alpha=0.9,
+                       edgecolors='black', linewidth=0.5)
     
     ax2.set_xlabel('Current (nA)', fontsize=12)
     ax2.set_ylabel(f'Peak {data_component} Value (µV)', fontsize=12)

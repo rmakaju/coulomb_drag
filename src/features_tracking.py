@@ -1,25 +1,471 @@
 """
-Peak Tracking Module for Coulomb Drag Data
+Feature Tracking Module for Coulomb Drag Data
 
-This module contains advanced peak tracking and evolution analysis functions
-for studying how peaks evolve with experimental parameters like drive current.
+This module contains advanced feature tracking and evolution analysis functions
+for studying how peaks and valleys evolve with experimental parameters like drive current.
+It consolidates functionality from valley_tracking.py and unified_feature_tracking.py.
 
 Functions:
 - plot_peak_tracking_across_current(): Track peaks across different currents
 - plot_valley_tracking_across_current(): Track valleys across different currents
-- plot_peak_tracking_selective(): Advanced tracking with filtering options  
+- plot_peak_tracking_selective(): Advanced peak tracking with filtering options  
+- plot_valley_tracking_selective(): Advanced valley tracking with filtering options
 - plot_peak_evolution(): Visualize how peak characteristics evolve with current
+- plot_valley_evolution(): Visualize how valley characteristics evolve with current
 - plot_combined_peaks_valleys_tracking(): Track and plot peaks and valleys together
 - plot_peak_tracking_all_files_only(): Track peaks only if present in all data files
 - plot_valley_tracking_all_files_only(): Track valleys only if present in all data files
 - analyze_peak_presence_across_files(): Analyze which peaks are present across different numbers of files
 - analyze_valley_presence_across_files(): Analyze which valleys are present across different numbers of files
+- analyze_peak_persistence(): Analyze which peaks persist across multiple measurements
+- analyze_valley_persistence(): Analyze which valleys persist across multiple measurements
+- plot_peak_trajectories(): Plot trajectories showing peak position and amplitude evolution
+- track_features_across_current(): Generic function to track features (peaks or valleys)
+- analyze_feature_persistence(): Generic function to analyze feature persistence
 """
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from peak_detection import analyze_peak_statistics
+from peak_detection import analyze_peak_statistics, analyze_valley_statistics
+
+
+def plot_feature_tracking_across_current(features_data, all_runs_data, feature_type='peaks', 
+                                        position_tolerance=0.01, figsize=(12, 8)):
+    """
+    Universal function to track features (peaks or valleys) across different currents
+    
+    Parameters
+    ----------
+    features_data : dict
+        Output from find_peaks_in_data or find_valleys_in_data
+    all_runs_data : dict
+        Data from all current measurements
+    feature_type : str, optional
+        Type of features to track: 'peaks' or 'valleys' (default: 'peaks')
+    position_tolerance : float, optional
+        Tolerance in V for grouping features at similar positions (default: 0.01)
+    figsize : tuple, optional
+        Figure size (default: (12, 8))
+    
+    Returns
+    -------
+    list
+        List of DataFrames containing grouped feature data
+        
+    Examples
+    --------
+    >>> from peak_detection import find_peaks_in_data, find_valleys_in_data
+    >>> 
+    >>> # Track peaks across current
+    >>> peaks = find_peaks_in_data(data, 'symmetric_smoothed')
+    >>> groups = plot_feature_tracking_across_current(peaks, data, 'peaks')
+    >>>
+    >>> # Track valleys across current
+    >>> valleys = find_valleys_in_data(data, 'symmetric_smoothed')
+    >>> groups = plot_feature_tracking_across_current(valleys, data, 'valleys')
+    """
+    
+    # Validate feature type
+    if feature_type not in ['peaks', 'valleys']:
+        raise ValueError("feature_type must be either 'peaks' or 'valleys'")
+    
+    # Get data component info from the first entry
+    if len(features_data) == 0:
+        print(f"No {feature_type} data provided")
+        return []
+        
+    data_component = features_data[0]['data_type']
+    
+    # Determine which keys to use based on feature type
+    if feature_type == 'peaks':
+        position_key = 'peak_gate_positions'
+        indices_key = 'peak_indices'
+        marker_style = 'o-'
+        marker_single = 'o'
+    else:  # valleys
+        position_key = 'valley_gate_positions'
+        indices_key = 'valley_indices'
+        marker_style = 's-'
+        marker_single = 's'
+    
+    # Collect all feature data with actual lockin values
+    all_data = []
+    for i, feature_info in features_data.items():
+        # Get the actual lockin values at feature positions from all_runs_data
+        current_data = all_runs_data[i]
+        lockin_values = current_data[data_component] / 1e-6  # Convert to µV
+        
+        # Get lockin values at feature indices
+        feature_lockin_values = lockin_values[feature_info[indices_key]]
+        
+        for pos, lockin_val in zip(feature_info[position_key], feature_lockin_values):
+            all_data.append({
+                'current': feature_info['current'],
+                'position': pos,
+                'lockin_value': lockin_val
+            })
+    
+    if len(all_data) == 0:
+        print(f"No {feature_type} found for tracking")
+        return []
+    
+    df = pd.DataFrame(all_data)
+    
+    # Group features by similar positions
+    position_groups = []
+    used_features = set()
+    
+    for idx, row in df.iterrows():
+        if idx in used_features:
+            continue
+            
+        # Find all features within tolerance of this position
+        similar_features = df[abs(df['position'] - row['position']) <= position_tolerance]
+        position_groups.append(similar_features)
+        used_features.update(similar_features.index)
+    
+    # Sort groups by mean position for consistent indexing
+    position_groups.sort(key=lambda x: x['position'].mean())
+    
+    # Plot tracked features
+    plt.figure(figsize=figsize)
+    
+    colors = plt.cm.tab10(np.linspace(0, 1, len(position_groups)))
+    
+    feature_name = feature_type.capitalize()[:-1]  # Remove 's' from 'peaks'/'valleys'
+    for i, group in enumerate(position_groups):
+        if len(group) > 1:  # Only plot if feature appears in multiple currents
+            mean_position = group['position'].mean()
+            plt.plot(group['current'], group['lockin_value'], marker_style, 
+                    color=colors[i], linewidth=2, markersize=8, alpha=0.8,
+                    label=f'{feature_name}: ~{mean_position:.3f}V')
+        else:
+            # Single feature - plot as isolated point
+            mean_position = group['position'].mean()
+            plt.scatter(group['current'], group['lockin_value'], 
+                       s=50, alpha=0.5, color=colors[i], marker=marker_single,
+                       label=f'{feature_name}: ~{mean_position:.3f}V (single)')
+    
+    plt.xlabel('Current (nA)', fontsize=14)
+    plt.ylabel(f'{feature_name} {data_component} Value (µV)', fontsize=14)
+    plt.title(f'{data_component.title()} {feature_name} Evolution', fontsize=16)
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+    
+    return position_groups
+
+
+def plot_feature_tracking_selective(features_data, all_runs_data, feature_type='peaks',
+                                   position_tolerance=0.05, feature_indices_to_plot=None, 
+                                   position_range=None, figsize=(12, 8)):
+    """
+    Universal function to track features (peaks or valleys) with selective plotting options
+    
+    Parameters
+    ----------
+    features_data : dict
+        Output from find_peaks_in_data or find_valleys_in_data
+    all_runs_data : dict
+        Data from all current measurements
+    feature_type : str, optional
+        Type of features to track: 'peaks' or 'valleys' (default: 'peaks')
+    position_tolerance : float, optional
+        Tolerance in V for grouping features at similar positions (default: 0.05)
+    feature_indices_to_plot : list, optional
+        List of feature group indices to plot (None = plot all)
+    position_range : tuple, optional
+        (min_pos, max_pos) to filter features by position (None = all positions)
+    figsize : tuple, optional
+        Figure size (default: (12, 8))
+    
+    Returns
+    -------
+    list
+        List of DataFrames containing grouped feature data
+        
+    Examples
+    --------
+    >>> from peak_detection import find_peaks_in_data, find_valleys_in_data
+    >>> 
+    >>> # Plot only peaks 0 and 2
+    >>> peaks = find_peaks_in_data(data, 'symmetric_smoothed')
+    >>> groups = plot_feature_tracking_selective(peaks, data, 'peaks', 
+    ...                                         feature_indices_to_plot=[0, 2])
+    >>>
+    >>> # Plot only valleys in voltage range -2.0 to -1.5 V
+    >>> valleys = find_valleys_in_data(data, 'symmetric_smoothed')
+    >>> groups = plot_feature_tracking_selective(valleys, data, 'valleys',
+    ...                                         position_range=(-2.0, -1.5))
+    """
+    
+    # Validate feature type
+    if feature_type not in ['peaks', 'valleys']:
+        raise ValueError("feature_type must be either 'peaks' or 'valleys'")
+    
+    # Get data component info from the first entry
+    if len(features_data) == 0:
+        print(f"No {feature_type} data provided")
+        return []
+        
+    data_component = features_data[0]['data_type']
+    
+    # Determine which keys to use based on feature type
+    if feature_type == 'peaks':
+        position_key = 'peak_gate_positions'
+        indices_key = 'peak_indices'
+        marker_style = 'o-'
+        marker_single = 'o'
+    else:  # valleys
+        position_key = 'valley_gate_positions'
+        indices_key = 'valley_indices'
+        marker_style = 's-'
+        marker_single = 's'
+    
+    # Collect all feature data with actual lockin values
+    all_data = []
+    for i, feature_info in features_data.items():
+        # Get the actual lockin values at feature positions from all_runs_data
+        current_data = all_runs_data[i]
+        lockin_values = current_data[data_component] / 1e-6  # Convert to µV
+        
+        # Get lockin values at feature indices
+        feature_lockin_values = lockin_values[feature_info[indices_key]]
+        
+        for pos, lockin_val in zip(feature_info[position_key], feature_lockin_values):
+            all_data.append({
+                'current': feature_info['current'],
+                'position': pos,
+                'lockin_value': lockin_val
+            })
+    
+    if len(all_data) == 0:
+        print(f"No {feature_type} found for tracking")
+        return []
+    
+    df = pd.DataFrame(all_data)
+    
+    # Group features by similar positions
+    position_groups = []
+    used_features = set()
+    
+    for idx, row in df.iterrows():
+        if idx in used_features:
+            continue
+            
+        # Find all features within tolerance of this position
+        similar_features = df[abs(df['position'] - row['position']) <= position_tolerance]
+        position_groups.append(similar_features)
+        used_features.update(similar_features.index)
+    
+    # Sort groups by mean position for consistent indexing
+    position_groups.sort(key=lambda x: x['position'].mean())
+    
+    # Print available features for user reference BEFORE filtering
+    feature_name = feature_type.capitalize()[:-1]  # Remove 's' from 'peaks'/'valleys'
+    print(f"All available {feature_type} groups (total: {len(position_groups)}):")
+    for i, group in enumerate(position_groups):
+        mean_pos = group['position'].mean()
+        num_points = len(group)
+        print(f"  {feature_name} {i}: ~{mean_pos:.3f}V ({num_points} data points)")
+    
+    # Apply position range filter if specified
+    if position_range is not None:
+        min_pos, max_pos = position_range
+        filtered_groups = [group for group in position_groups 
+                          if min_pos <= group['position'].mean() <= max_pos]
+        print(f"\nFiltered by position range {position_range}: {len(filtered_groups)} groups")
+        position_groups = filtered_groups
+    
+    # Apply feature index filter if specified
+    if feature_indices_to_plot is not None:
+        original_groups = position_groups.copy()
+        position_groups = []
+        for i in feature_indices_to_plot:
+            if i < len(original_groups):
+                position_groups.append(original_groups[i])
+            else:
+                print(f"Warning: {feature_name} index {i} is out of range (max: {len(original_groups)-1})")
+        print(f"\nSelected {feature_type} indices {feature_indices_to_plot}: {len(position_groups)} groups")
+    
+    if len(position_groups) == 0:
+        print(f"No {feature_type} match the selection criteria")
+        return position_groups
+    
+    # Plot tracked features
+    plt.figure(figsize=figsize)
+    
+    colors = plt.cm.tab10(np.linspace(0, 1, len(position_groups)))
+    
+    for i, group in enumerate(position_groups):
+        if len(group) > 1:  # Only plot if feature appears in multiple currents
+            mean_position = group['position'].mean()
+            plt.plot(group['current'], group['lockin_value'], marker_style, 
+                    color=colors[i], linewidth=2, markersize=8, alpha=0.8,
+                    label=f'{feature_name}: ~{mean_position:.3f}V')
+        else:
+            # Single feature - plot as isolated point
+            mean_position = group['position'].mean()
+            plt.scatter(group['current'], group['lockin_value'], 
+                       s=50, alpha=0.5, color=colors[i], marker=marker_single,
+                       label=f'{feature_name}: ~{mean_position:.3f}V (single)')
+    
+    plt.xlabel('Current (nA)', fontsize=14)
+    plt.ylabel(f'{feature_name} {data_component} Value (µV)', fontsize=14)
+    
+    # Update title based on selection
+    title_suffix = ""
+    if feature_indices_to_plot is not None:
+        title_suffix += f" (Selected: {feature_indices_to_plot})"
+    if position_range is not None:
+        title_suffix += f" (Range: {position_range[0]:.3f}-{position_range[1]:.3f}V)"
+    
+    plt.title(f'{data_component.title()} {feature_name} Evolution{title_suffix}', fontsize=16)
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+    
+    return position_groups
+
+
+def plot_feature_tracking_all_files_only(features_data, all_runs_data, feature_type='peaks', 
+                                        position_tolerance=0.01, figsize=(12, 8)):
+    """
+    Universal function to track features that appear in ALL files (strict persistence requirement)
+    
+    Parameters
+    ----------
+    features_data : dict
+        Output from find_peaks_in_data or find_valleys_in_data
+    all_runs_data : dict
+        Data from all current measurements
+    feature_type : str, optional
+        Type of features to track: 'peaks' or 'valleys' (default: 'peaks')
+    position_tolerance : float, optional
+        Tolerance in V for grouping features at similar positions (default: 0.01)
+    figsize : tuple, optional
+        Figure size (default: (12, 8))
+    
+    Returns
+    -------
+    list
+        List of DataFrames containing grouped feature data for persistent features only
+        
+    Examples
+    --------
+    >>> from peak_detection import find_peaks_in_data, find_valleys_in_data
+    >>> 
+    >>> # Track only highly persistent peaks
+    >>> peaks = find_peaks_in_data(data, 'symmetric_smoothed')
+    >>> groups = plot_feature_tracking_all_files_only(peaks, data, 'peaks')
+    >>>
+    >>> # Track only highly persistent valleys
+    >>> valleys = find_valleys_in_data(data, 'symmetric_smoothed')
+    >>> groups = plot_feature_tracking_all_files_only(valleys, data, 'valleys')
+    """
+    
+    # Validate feature type
+    if feature_type not in ['peaks', 'valleys']:
+        raise ValueError("feature_type must be either 'peaks' or 'valleys'")
+    
+    # Get data component info from the first entry
+    if len(features_data) == 0:
+        print(f"No {feature_type} data provided")
+        return []
+        
+    data_component = features_data[0]['data_type']
+    
+    # Determine which keys to use based on feature type
+    if feature_type == 'peaks':
+        position_key = 'peak_gate_positions'
+        indices_key = 'peak_indices'
+        marker_style = 'o-'
+        marker_single = 'o'
+    else:  # valleys
+        position_key = 'valley_gate_positions'
+        indices_key = 'valley_indices'
+        marker_style = 's-'
+        marker_single = 's'
+    
+    # Collect all feature data with actual lockin values
+    all_data = []
+    for i, feature_info in features_data.items():
+        # Get the actual lockin values at feature positions from all_runs_data
+        current_data = all_runs_data[i]
+        lockin_values = current_data[data_component] / 1e-6  # Convert to µV
+        
+        # Get lockin values at feature indices
+        feature_lockin_values = lockin_values[feature_info[indices_key]]
+        
+        for pos, lockin_val in zip(feature_info[position_key], feature_lockin_values):
+            all_data.append({
+                'current': feature_info['current'],
+                'position': pos,
+                'lockin_value': lockin_val
+            })
+    
+    if len(all_data) == 0:
+        print(f"No {feature_type} found for tracking")
+        return []
+    
+    df = pd.DataFrame(all_data)
+    
+    # Group features by similar positions
+    position_groups = []
+    used_features = set()
+    
+    for idx, row in df.iterrows():
+        if idx in used_features:
+            continue
+            
+        # Find all features within tolerance of this position
+        similar_features = df[abs(df['position'] - row['position']) <= position_tolerance]
+        position_groups.append(similar_features)
+        used_features.update(similar_features.index)
+    
+    # Filter to only include features that appear in ALL files
+    total_files = len(features_data)
+    persistent_groups = []
+    
+    for group in position_groups:
+        unique_currents = group['current'].nunique()
+        if unique_currents == total_files:  # Feature appears in all files
+            persistent_groups.append(group)
+    
+    # Sort groups by mean position for consistent indexing
+    persistent_groups.sort(key=lambda x: x['position'].mean())
+    
+    feature_name = feature_type.capitalize()[:-1]  # Remove 's' from 'peaks'/'valleys'
+    print(f"All {feature_type} groups: {len(position_groups)}")
+    print(f"Persistent {feature_type} (appear in all {total_files} files): {len(persistent_groups)}")
+    
+    if len(persistent_groups) == 0:
+        print(f"No {feature_type} appear in all files")
+        return persistent_groups
+    
+    # Plot only persistent features
+    plt.figure(figsize=figsize)
+    
+    colors = plt.cm.tab10(np.linspace(0, 1, len(persistent_groups)))
+    
+    for i, group in enumerate(persistent_groups):
+        mean_position = group['position'].mean()
+        plt.plot(group['current'], group['lockin_value'], marker_style, 
+                color=colors[i], linewidth=2, markersize=8, alpha=0.8,
+                label=f'{feature_name}: ~{mean_position:.3f}V')
+    
+    plt.xlabel('Current (nA)', fontsize=14)
+    plt.ylabel(f'{feature_name} {data_component} Value (µV)', fontsize=14)
+    plt.title(f'{data_component.title()} {feature_name} Evolution (All Files Only)', fontsize=16)
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+    
+    return persistent_groups
 
 
 def plot_peak_tracking_across_current(peaks_data, all_runs_data, position_tolerance=0.01, figsize=(12, 8)):
@@ -33,7 +479,7 @@ def plot_peak_tracking_across_current(peaks_data, all_runs_data, position_tolera
     all_runs_data : dict
         Data from all current measurements
     position_tolerance : float, optional
-        Tolerance in V for grouping peaks at similar positions (default: 0.05)
+        Tolerance in V for grouping peaks at similar positions (default: 0.01)
     figsize : tuple, optional
         Figure size (default: (12, 8))
         
@@ -50,97 +496,8 @@ def plot_peak_tracking_across_current(peaks_data, all_runs_data, position_tolera
     >>> print(f"Found {len(groups)} peak groups")
     """
     
-    # Get data component info from the first entry
-    if len(peaks_data) == 0:
-        print("No peak data provided")
-        return
-        
-    data_component = peaks_data[0]['data_type']
-    
-    # Collect all peak data with actual lockin values
-    all_data = []
-    for i, peak_info in peaks_data.items():
-        # Get the actual lockin values at peak positions from all_runs_data
-        current_data = all_runs_data[i]
-        lockin_values = current_data[data_component] / 1e-6  # Convert to µV
-        
-        # Get lockin values at peak indices
-        peak_lockin_values = lockin_values[peak_info['peak_indices']]
-        
-        for pos, lockin_val in zip(peak_info['peak_gate_positions'], peak_lockin_values):
-            all_data.append({
-                'current': peak_info['current'],
-                'position': pos,
-                'lockin_value': lockin_val
-            })
-    
-    if len(all_data) == 0:
-        print("No peaks found for tracking")
-        return
-    
-    df = pd.DataFrame(all_data)
-    
-    # Group peaks by similar positions
-    position_groups = []
-    used_peaks = set()
-    
-    for idx, row in df.iterrows():
-        if idx in used_peaks:
-            continue
-            
-        # Find all peaks within tolerance of this position
-        similar_peaks = df[abs(df['position'] - row['position']) <= position_tolerance]
-        position_groups.append(similar_peaks)
-        used_peaks.update(similar_peaks.index)
-    
-    # Plot tracked peaks
-    plt.figure(figsize=figsize)
-    
-    # Use a better color scheme that provides distinct colors (not gradients)
-    num_groups = len(position_groups)
-    
-    # Create distinct colors by cycling through multiple colormaps
-    if num_groups <= 10:
-        # Use tab10 for small number of groups
-        colors = plt.cm.tab10(np.linspace(0, 1, 10))[:num_groups]
-    elif num_groups <= 20:
-        # Combine tab10 and tab20 for up to 20 distinct colors
-        colors1 = plt.cm.tab10(np.linspace(0, 1, 10))
-        colors2 = plt.cm.tab20(np.linspace(0, 1, 20))[10:]  # Take the second half of tab20
-        colors = np.vstack([colors1, colors2[:num_groups-10]])
-    else:
-        # For more than 20, cycle through tab10, tab20, and Set3
-        colors1 = plt.cm.tab10(np.linspace(0, 1, 10))
-        colors2 = plt.cm.tab20(np.linspace(0, 1, 20))[10:]  # Second half of tab20
-        colors3 = plt.cm.Set3(np.linspace(0, 1, 12))
-        
-        # Cycle through the combined color sets
-        all_colors = np.vstack([colors1, colors2, colors3])
-        colors = []
-        for i in range(num_groups):
-            colors.append(all_colors[i % len(all_colors)])
-        colors = np.array(colors)
-    
-    for i, group in enumerate(position_groups):
-        if len(group) > 1:  # Only plot if peak appears in multiple currents
-            mean_position = group['position'].mean()
-            plt.plot(group['current'], group['lockin_value'], 'o-', 
-                    color=colors[i], linewidth=2, markersize=8, alpha=0.8,
-                    label=f'Peak ~{mean_position:.3f}V')
-        else:
-            # Single peak - plot as isolated point
-            plt.scatter(group['current'], group['lockin_value'], 
-                       s=50, alpha=0.5, color='gray')
-    
-    plt.xlabel('Current (nA)', fontsize=14)
-    plt.ylabel(f'Peak {data_component} Value (µV)', fontsize=14)
-    plt.title(f'{data_component.title()} Peak Values Evolution with Current (Tracked by Position)', fontsize=16)
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-    
-    return position_groups
+    return plot_feature_tracking_across_current(peaks_data, all_runs_data, 'peaks', 
+                                               position_tolerance, figsize)
 
 
 def plot_peak_tracking_selective(peaks_data, all_runs_data, position_tolerance=0.05, 
@@ -180,118 +537,9 @@ def plot_peak_tracking_selective(peaks_data, all_runs_data, position_tolerance=0
     >>> # Plot only peaks in voltage range -2.0 to -1.5 V
     >>> groups = plot_peak_tracking_selective(peaks, data, position_range=(-2.0, -1.5))
     """
-    
-    # Get data component info from the first entry
-    if len(peaks_data) == 0:
-        print("No peak data provided")
-        return
-        
-    data_component = peaks_data[0]['data_type']
-    
-    # Collect all peak data with actual lockin values
-    all_data = []
-    for i, peak_info in peaks_data.items():
-        # Get the actual lockin values at peak positions from all_runs_data
-        current_data = all_runs_data[i]
-        lockin_values = current_data[data_component] / 1e-6  # Convert to µV
-        
-        # Get lockin values at peak indices
-        peak_lockin_values = lockin_values[peak_info['peak_indices']]
-        
-        for pos, lockin_val in zip(peak_info['peak_gate_positions'], peak_lockin_values):
-            all_data.append({
-                'current': peak_info['current'],
-                'position': pos,
-                'lockin_value': lockin_val
-            })
-    
-    if len(all_data) == 0:
-        print("No peaks found for tracking")
-        return
-    
-    df = pd.DataFrame(all_data)
-    
-    # Group peaks by similar positions
-    position_groups = []
-    used_peaks = set()
-    
-    for idx, row in df.iterrows():
-        if idx in used_peaks:
-            continue
-            
-        # Find all peaks within tolerance of this position
-        similar_peaks = df[abs(df['position'] - row['position']) <= position_tolerance]
-        position_groups.append(similar_peaks)
-        used_peaks.update(similar_peaks.index)
-    
-    # Sort groups by mean position for consistent indexing
-    position_groups.sort(key=lambda x: x['position'].mean())
-    
-    # Print available peaks for user reference BEFORE filtering
-    print(f"All available peak groups (total: {len(position_groups)}):")
-    for i, group in enumerate(position_groups):
-        mean_pos = group['position'].mean()
-        num_points = len(group)
-        print(f"  Peak {i}: ~{mean_pos:.3f}V ({num_points} data points)")
-    
-    # Apply position range filter if specified
-    if position_range is not None:
-        min_pos, max_pos = position_range
-        filtered_groups = [group for group in position_groups 
-                          if min_pos <= group['position'].mean() <= max_pos]
-        print(f"\nFiltered by position range {position_range}: {len(filtered_groups)} groups")
-        position_groups = filtered_groups
-    
-    # Apply peak index filter if specified
-    if peak_indices_to_plot is not None:
-        original_groups = position_groups.copy()
-        position_groups = []
-        for i in peak_indices_to_plot:
-            if i < len(original_groups):
-                position_groups.append(original_groups[i])
-            else:
-                print(f"Warning: Peak index {i} is out of range (max: {len(original_groups)-1})")
-        print(f"\nSelected peak indices {peak_indices_to_plot}: {len(position_groups)} groups")
-    
-    if len(position_groups) == 0:
-        print("No peaks match the selection criteria")
-        return position_groups
-    
-    # Plot tracked peaks
-    plt.figure(figsize=figsize)
-    
-    colors = plt.cm.tab10(np.linspace(0, 1, len(position_groups)))
-    
-    for i, group in enumerate(position_groups):
-        if len(group) > 1:  # Only plot if peak appears in multiple currents
-            mean_position = group['position'].mean()
-            plt.plot(group['current'], group['lockin_value'], 'o-', 
-                    color=colors[i], linewidth=2, markersize=8, alpha=0.8,
-                    label=f'Peak: ~{mean_position:.3f}V')
-        else:
-            # Single peak - plot as isolated point
-            mean_position = group['position'].mean()
-            plt.scatter(group['current'], group['lockin_value'], 
-                       s=50, alpha=0.5, color=colors[i], 
-                       label=f'Peak: ~{mean_position:.3f}V (single)')
-    
-    plt.xlabel('Current (nA)', fontsize=14)
-    plt.ylabel(f'Peak {data_component} Value (µV)', fontsize=14)
-    
-    # Update title based on selection
-    title_suffix = ""
-    if peak_indices_to_plot is not None:
-        title_suffix += f" (Selected: {peak_indices_to_plot})"
-    if position_range is not None:
-        title_suffix += f" (Range: {position_range[0]:.3f}-{position_range[1]:.3f}V)"
-    
-    plt.title(f'{data_component.title()} Peak Evolution{title_suffix}', fontsize=16)
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-    
-    return position_groups
+    return plot_feature_tracking_selective(peaks_data, all_runs_data, 'peaks',
+                                          position_tolerance, peak_indices_to_plot,
+                                          position_range, figsize)
 
 
 def plot_peak_evolution(peaks_data):
@@ -720,97 +968,8 @@ def plot_valley_tracking_across_current(valleys_data, all_runs_data, position_to
     >>> print(f"Found {len(groups)} valley groups")
     """
     
-    # Get data component info from the first entry
-    if len(valleys_data) == 0:
-        print("No valley data provided")
-        return
-        
-    data_component = valleys_data[0]['data_type']
-    
-    # Collect all valley data with actual lockin values
-    all_data = []
-    for i, valley_info in valleys_data.items():
-        # Get the actual lockin values at valley positions from all_runs_data
-        current_data = all_runs_data[i]
-        lockin_values = current_data[data_component] / 1e-6  # Convert to µV
-        
-        # Get lockin values at valley indices
-        valley_lockin_values = lockin_values[valley_info['valley_indices']]
-        
-        for pos, lockin_val in zip(valley_info['valley_gate_positions'], valley_lockin_values):
-            all_data.append({
-                'current': valley_info['current'],
-                'position': pos,
-                'lockin_value': lockin_val
-            })
-    
-    if len(all_data) == 0:
-        print("No valleys found for tracking")
-        return
-    
-    df = pd.DataFrame(all_data)
-    
-    # Group valleys by similar positions
-    position_groups = []
-    used_valleys = set()
-    
-    for idx, row in df.iterrows():
-        if idx in used_valleys:
-            continue
-            
-        # Find all valleys within tolerance of this position
-        similar_valleys = df[abs(df['position'] - row['position']) <= position_tolerance]
-        position_groups.append(similar_valleys)
-        used_valleys.update(similar_valleys.index)
-    
-    # Plot tracked valleys
-    plt.figure(figsize=figsize)
-    
-    # Use a better color scheme that provides distinct colors (not gradients)
-    num_groups = len(position_groups)
-    
-    # Create distinct colors by cycling through multiple colormaps
-    if num_groups <= 10:
-        # Use tab10 for small number of groups
-        colors = plt.cm.tab10(np.linspace(0, 1, 10))[:num_groups]
-    elif num_groups <= 20:
-        # Combine tab10 and tab20 for up to 20 distinct colors
-        colors1 = plt.cm.tab10(np.linspace(0, 1, 10))
-        colors2 = plt.cm.tab20(np.linspace(0, 1, 20))[10:]  # Take the second half of tab20
-        colors = np.vstack([colors1, colors2[:num_groups-10]])
-    else:
-        # For more than 20, cycle through tab10, tab20, and Set3
-        colors1 = plt.cm.tab10(np.linspace(0, 1, 10))
-        colors2 = plt.cm.tab20(np.linspace(0, 1, 20))[10:]  # Second half of tab20
-        colors3 = plt.cm.Set3(np.linspace(0, 1, 12))
-        
-        # Cycle through the combined color sets
-        all_colors = np.vstack([colors1, colors2, colors3])
-        colors = []
-        for i in range(num_groups):
-            colors.append(all_colors[i % len(all_colors)])
-        colors = np.array(colors)
-    
-    for i, group in enumerate(position_groups):
-        if len(group) > 1:  # Only plot if valley appears in multiple currents
-            mean_position = group['position'].mean()
-            plt.plot(group['current'], group['lockin_value'], 's-', 
-                    color=colors[i], linewidth=2, markersize=8, alpha=0.8,
-                    label=f'Valley ~{mean_position:.3f}V')
-        else:
-            # Single valley - plot as isolated point
-            plt.scatter(group['current'], group['lockin_value'], 
-                       s=50, alpha=0.5, color='gray', marker='s')
-    
-    plt.xlabel('Current (nA)', fontsize=14)
-    plt.ylabel(f'Valley {data_component} Value (µV)', fontsize=14)
-    plt.title(f'{data_component.title()} Valley Values Evolution with Current (Tracked by Position)', fontsize=16)
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-    
-    return position_groups
+    return plot_feature_tracking_across_current(valleys_data, all_runs_data, 'valleys', 
+                                               position_tolerance, figsize)
 
 
 def plot_peak_tracking_all_files_only(peaks_data, all_runs_data, position_tolerance=0.01, figsize=(12, 8)):
@@ -1035,30 +1194,7 @@ def plot_valley_tracking_all_files_only(valleys_data, all_runs_data, position_to
     # Plot tracked valleys
     plt.figure(figsize=figsize)
     
-    # Use a better color scheme that provides distinct colors (not gradients)
-    num_groups = len(all_files_groups)
-    
-    # Create distinct colors by cycling through multiple colormaps
-    if num_groups <= 10:
-        # Use tab10 for small number of groups
-        colors = plt.cm.tab10(np.linspace(0, 1, 10))[:num_groups]
-    elif num_groups <= 20:
-        # Combine tab10 and tab20 for up to 20 distinct colors
-        colors1 = plt.cm.tab10(np.linspace(0, 1, 10))
-        colors2 = plt.cm.tab20(np.linspace(0, 1, 20))[10:]  # Take the second half of tab20
-        colors = np.vstack([colors1, colors2[:num_groups-10]])
-    else:
-        # For more than 20, cycle through tab10, tab20, and Set3
-        colors1 = plt.cm.tab10(np.linspace(0, 1, 10))
-        colors2 = plt.cm.tab20(np.linspace(0, 1, 20))[10:]  # Second half of tab20
-        colors3 = plt.cm.Set3(np.linspace(0, 1, 12))
-        
-        # Cycle through the combined color sets
-        all_colors = np.vstack([colors1, colors2, colors3])
-        colors = []
-        for i in range(num_groups):
-            colors.append(all_colors[i % len(all_colors)])
-        colors = np.array(colors)
+    colors = plt.cm.tab10(np.linspace(0, 1, len(all_files_groups)))
     
     for i, group in enumerate(all_files_groups):
         mean_position = group['position'].mean()
@@ -1077,193 +1213,43 @@ def plot_valley_tracking_all_files_only(valleys_data, all_runs_data, position_to
     return all_files_groups
 
 
-def analyze_peak_presence_across_files(peaks_data, position_tolerance=0.01):
+def plot_valley_tracking_selective(valleys_data, all_runs_data, position_tolerance=0.05, 
+                                  valley_indices_to_plot=None, position_range=None, 
+                                  figsize=(12, 8)):
     """
-    Analyze which peaks are present across different numbers of files
-    
-    Parameters
-    ----------
-    peaks_data : dict
-        Output from find_peaks_in_data
-    position_tolerance : float, optional
-        Tolerance in V for grouping peaks at similar positions (default: 0.01)
-        
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame with statistics about peak presence across files
-        
-    Examples
-    --------
-    >>> from peak_detection import find_peaks_in_data
-    >>> peaks = find_peaks_in_data(data, 'symmetric_smoothed')
-    >>> stats = analyze_peak_presence_across_files(peaks, position_tolerance=0.01)
-    >>> print(stats)
-    """
-    
-    if len(peaks_data) == 0:
-        print("No peak data provided")
-        return pd.DataFrame()
-        
-    data_component = peaks_data[0]['data_type']
-    total_files = len(peaks_data)
-    
-    # Collect all peak data
-    all_data = []
-    for i, peak_info in peaks_data.items():
-        for pos in peak_info['peak_gate_positions']:
-            all_data.append({
-                'position': pos,
-                'file_index': i
-            })
-    
-    if len(all_data) == 0:
-        print("No peaks found")
-        return pd.DataFrame()
-    
-    df = pd.DataFrame(all_data)
-    
-    # Group peaks by similar positions
-    position_groups = []
-    used_peaks = set()
-    
-    for idx, row in df.iterrows():
-        if idx in used_peaks:
-            continue
-            
-        # Find all peaks within tolerance of this position
-        similar_peaks = df[abs(df['position'] - row['position']) <= position_tolerance]
-        position_groups.append(similar_peaks)
-        used_peaks.update(similar_peaks.index)
-    
-    # Analyze presence across files
-    presence_stats = []
-    for i, group in enumerate(position_groups):
-        unique_files = set(group['file_index'])
-        presence_fraction = len(unique_files) / total_files
-        
-        stats = {
-            'peak_group_id': i,
-            'mean_position': group['position'].mean(),
-            'position_std': group['position'].std(),
-            'files_present': len(unique_files),
-            'total_files': total_files,
-            'presence_fraction': presence_fraction,
-            'present_in_all_files': len(unique_files) == total_files,
-            'file_indices': sorted(list(unique_files))
-        }
-        presence_stats.append(stats)
-    
-    stats_df = pd.DataFrame(presence_stats)
-    
-    # Print summary
-    print(f"\nPeak Presence Analysis for {data_component}:")
-    print(f"Total files: {total_files}")
-    print(f"Total peak groups found: {len(position_groups)}")
-    
-    all_files_count = sum(stats_df['present_in_all_files'])
-    print(f"Peak groups present in all files: {all_files_count}")
-    
-    # Show distribution of presence
-    presence_counts = stats_df['files_present'].value_counts().sort_index()
-    print("\nDistribution of peak presence:")
-    for files_count, peak_count in presence_counts.items():
-        print(f"  {peak_count} peaks present in {files_count}/{total_files} files")
-    
-    return stats_df
-
-
-def analyze_valley_presence_across_files(valleys_data, position_tolerance=0.01):
-    """
-    Analyze which valleys are present across different numbers of files
+    Track individual valleys across different currents with selective plotting options
     
     Parameters
     ----------
     valleys_data : dict
         Output from find_valleys_in_data
+    all_runs_data : dict
+        Data from all current measurements
     position_tolerance : float, optional
-        Tolerance in V for grouping valleys at similar positions (default: 0.01)
-        
+        Tolerance in V for grouping valleys at similar positions (default: 0.05)
+    valley_indices_to_plot : list, optional
+        List of valley group indices to plot (None = plot all)
+    position_range : tuple, optional
+        (min_pos, max_pos) to filter valleys by position (None = all positions)
+    figsize : tuple, optional
+        Figure size (default: (12, 8))
+    
     Returns
     -------
-    pd.DataFrame
-        DataFrame with statistics about valley presence across files
+    list
+        List of DataFrames containing grouped valley data
         
     Examples
     --------
     >>> from peak_detection import find_valleys_in_data
     >>> valleys = find_valleys_in_data(data, 'symmetric_smoothed')
-    >>> stats = analyze_valley_presence_across_files(valleys, position_tolerance=0.01)
-    >>> print(stats)
+    >>> 
+    >>> # Plot only valleys 0 and 2
+    >>> groups = plot_valley_tracking_selective(valleys, data, valley_indices_to_plot=[0, 2])
+    >>>
+    >>> # Plot only valleys in voltage range -2.0 to -1.5 V
+    >>> groups = plot_valley_tracking_selective(valleys, data, position_range=(-2.0, -1.5))
     """
-    
-    if len(valleys_data) == 0:
-        print("No valley data provided")
-        return pd.DataFrame()
-        
-    data_component = valleys_data[0]['data_type']
-    total_files = len(valleys_data)
-    
-    # Collect all valley data
-    all_data = []
-    for i, valley_info in valleys_data.items():
-        for pos in valley_info['valley_gate_positions']:
-            all_data.append({
-                'position': pos,
-                'file_index': i
-            })
-    
-    if len(all_data) == 0:
-        print("No valleys found")
-        return pd.DataFrame()
-    
-    df = pd.DataFrame(all_data)
-    
-    # Group valleys by similar positions
-    position_groups = []
-    used_valleys = set()
-    
-    for idx, row in df.iterrows():
-        if idx in used_valleys:
-            continue
-            
-        # Find all valleys within tolerance of this position
-        similar_valleys = df[abs(df['position'] - row['position']) <= position_tolerance]
-        position_groups.append(similar_valleys)
-        used_valleys.update(similar_valleys.index)
-    
-    # Analyze presence across files
-    presence_stats = []
-    for i, group in enumerate(position_groups):
-        unique_files = set(group['file_index'])
-        presence_fraction = len(unique_files) / total_files
-        
-        stats = {
-            'valley_group_id': i,
-            'mean_position': group['position'].mean(),
-            'position_std': group['position'].std(),
-            'files_present': len(unique_files),
-            'total_files': total_files,
-            'presence_fraction': presence_fraction,
-            'present_in_all_files': len(unique_files) == total_files,
-            'file_indices': sorted(list(unique_files))
-        }
-        presence_stats.append(stats)
-    
-    stats_df = pd.DataFrame(presence_stats)
-    
-    # Print summary
-    print(f"\nValley Presence Analysis for {data_component}:")
-    print(f"Total files: {total_files}")
-    print(f"Total valley groups found: {len(position_groups)}")
-    
-    all_files_count = sum(stats_df['present_in_all_files'])
-    print(f"Valley groups present in all files: {all_files_count}")
-    
-    # Show distribution of presence
-    presence_counts = stats_df['files_present'].value_counts().sort_index()
-    print("\nDistribution of valley presence:")
-    for files_count, valley_count in presence_counts.items():
-        print(f"  {valley_count} valleys present in {files_count}/{total_files} files")
-    
-    return stats_df
+    return plot_feature_tracking_selective(valleys_data, all_runs_data, 'valleys',
+                                          position_tolerance, valley_indices_to_plot,
+                                          position_range, figsize)
